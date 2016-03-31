@@ -14,6 +14,7 @@ import numpy as np
 import cv2
 from fann2 import libfann
 import requests
+import bottle
 
 
 CAPTCHA_WIDTH = 220
@@ -24,8 +25,40 @@ CH_HEIGHT = 44
 
 def get_image(fpath):
     img = cv2.imread(fpath, 0)
-    assert(img is not None)
+    assert img is not None, 'cannot read image'
     return img
+
+
+def decode_image(data):
+    img = cv2.imdecode(data, 0)
+    assert img is not None, 'cannot decode image'
+    return img
+
+
+def img2data(img):
+    data = img.flatten() & 1
+    assert len(data) == CH_WIDTH * CH_HEIGHT, 'bad data size'
+    return data
+
+
+def make_answer(digit):
+    digit = int(digit)
+    answer = [-1] * 10
+    answer[digit] = 1
+    return answer
+
+
+def get_network(fpath):
+    ann = libfann.neural_net()
+    assert ann.create_from_file(fpath), 'cannot init network'
+    return ann
+
+
+def report(line='', progress=False):
+    if progress:
+        line = '\033[1A\033[K' + line
+    line += '\n'
+    sys.stderr.write(line)
 
 
 def preprocess(img):
@@ -135,13 +168,6 @@ def show(img):
     cv2.destroyAllWindows()
 
 
-def report(line='', progress=False):
-    if progress:
-        line = '\033[1A\033[K' + line
-    line += '\n'
-    sys.stderr.write(line)
-
-
 def train(captchas_dir):
     CONNECTION_RATE = 1
     LEARNING_RATE = 0.7
@@ -181,25 +207,6 @@ def train(captchas_dir):
     runtime = time.time() - start
     report('Done training on {}/{} captchas in {:.3f} seconds'.format(
            succeed, len(captchas), runtime))
-    return ann
-
-
-def img2data(img):
-    data = img.flatten() & 1
-    assert len(data) == CH_WIDTH * CH_HEIGHT, 'bad data size'
-    return data
-
-
-def make_answer(digit):
-    digit = int(digit)
-    answer = [-1] * 10
-    answer[digit] = 1
-    return answer
-
-
-def get_network(fpath):
-    ann = libfann.neural_net()
-    ann.create_from_file(fpath)
     return ann
 
 
@@ -310,6 +317,16 @@ def collect(captchas_dir, api_key):
             report('Saved {}'.format(name))
 
 
+@bottle.post('/ocr')
+def serve():
+    captcha = bottle.request.files.get('file')
+    if not captcha:
+        bottle.abort(400, 'No captcha provided.')
+    ann = bottle.request.app.ann
+    img = decode_image(np.fromfile(captcha.file, dtype=np.uint8))
+    return ocr(ann, img)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -323,12 +340,20 @@ def main():
         help='crop chars (for show)')
     parser.add_argument(
         '-n', dest='netfile', metavar='netfile',
-        help='neural network (for ocr)')
+        help='neural network (for ocr & serve)')
     parser.add_argument(
         '-k', dest='keyfile', metavar='keyfile',
         help='antigate key file (for collect)')
     parser.add_argument(
-        'mode', choices=['show', 'train', 'ocr', 'collect'],
+        '-p', dest='port', metavar='port',
+        type=int, default=28228,
+        help='listening port (for serve, default: %(default)s)')
+    parser.add_argument(
+        '-b', dest='host', metavar='host',
+        default='127.0.0.1',
+        help='listening address (for serve, default: %(default)s)')
+    parser.add_argument(
+        'mode', choices=['show', 'train', 'ocr', 'collect', 'serve'],
         help='operational mode')
     opts = parser.parse_args(sys.argv[1:])
     if opts.mode == 'show':
@@ -361,6 +386,12 @@ def main():
             parser.error('specify antigate key file')
         api_key = open(opts.keyfile, 'r').read().strip()
         collect(opts.outfile, api_key)
+    elif opts.mode == 'serve':
+        if opts.netfile is None:
+            parser.error('specify network file')
+        ann = get_network(opts.netfile)
+        bottle.default_app().ann = ann
+        bottle.run(host=opts.host, port=opts.port)
 
 
 if __name__ == '__main__':
