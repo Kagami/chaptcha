@@ -1,4 +1,4 @@
-# 2chaptcha
+# chaptcha
 
 Break CAPTCHA at 2ch.hk using OpenCV. Just for fun.
 
