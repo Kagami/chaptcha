@@ -9,9 +9,11 @@ import re
 import sys
 import time
 import argparse
+from datetime import datetime
 import numpy as np
 import cv2
 from fann2 import libfann
+import requests
 
 
 CAPTCHA_WIDTH = 220
@@ -154,9 +156,9 @@ def train(captchas_dir):
     ann.set_activation_function_output(libfann.SIGMOID_SYMMETRIC_STEPWISE)
 
     start = time.time()
+    succeed = 0
     captchas_dir = os.path.abspath(captchas_dir)
     captchas = os.listdir(captchas_dir)
-    succeed = 0
     report()
     for i, name in enumerate(captchas):
         answers = re.match(r'(\d{6})\.png$', name)
@@ -211,6 +213,103 @@ def ocr(ann, img):
     return ''.join(map(find_answer, split(img)))
 
 
+def antigate_ocr(api_key, data, timeout=50, ext='png',
+                 is_numeric=True, min_len=6, max_len=6):
+    FIRST_SLEEP = 7
+    ATTEMPT_SLEEP = 2
+    start = datetime.now()
+
+    # Uploading captcha.
+    fields = {'key': api_key, 'method': 'post'}
+    if is_numeric:
+        fields['numeric'] = '1'
+    if min_len:
+        fields['min_len'] = str(min_len)
+    if max_len:
+        fields['max_len'] = str(max_len)
+    files = {'file': ('captcha.' + ext, data)}
+    res = requests.post('http://anti-captcha.com/in.php',
+                        data=fields, files=files).text
+    if not res.startswith('OK|'):
+        raise Exception(res)
+    captcha_id = res[3:]
+    # Getting captcha text.
+    fields = {
+        'key': api_key,
+        'action': 'get',
+        'id': captcha_id,
+    }
+    time.sleep(FIRST_SLEEP)
+    while True:
+        res = requests.get('http://anti-captcha.com/res.php',
+                           params=fields).text
+        if res.startswith('OK|'):
+            return res[3:]
+        elif res == 'CAPCHA_NOT_READY':
+            if (datetime.now() - start).seconds >= timeout:
+                raise Exception('getting captcha text timeout')
+            time.sleep(ATTEMPT_SLEEP)
+        else:
+            raise Exception(res)
+
+
+def request_captcha():
+    CAPTCHA_URL = 'https://2ch.hk/makaba/captcha.fcgi'
+    CAPTCHA_FIELDS = {
+        'type': '2chaptcha',
+        'action': 'thread',
+        'board': 's',
+    }
+    CHROME_UA = (
+        'Mozilla/5.0 (Windows NT 6.1; WOW64) ' +
+        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+        'Chrome/48.0.2564.116 Safari/537.36'
+    )
+    CAPTCHA_HEADERS = {
+        'User-Agent': CHROME_UA,
+    }
+    res = requests.get(CAPTCHA_URL, params=CAPTCHA_FIELDS,
+                       headers=CAPTCHA_HEADERS).text
+    if not res.startswith('CHECK\n'):
+        raise Exception('bad answer on captcha request')
+    captcha_id = res[6:]
+    fields2 = {
+        'type': '2chaptcha',
+        'action': 'image',
+        'id': captcha_id,
+    }
+    r = requests.get(CAPTCHA_URL, params=fields2, headers=CAPTCHA_HEADERS)
+    if r.headers['Content-Type'] != 'image/png':
+        raise Exception('bad captcha result')
+    return r.content
+
+
+def collect(captchas_dir, api_key):
+    captchas_dir = os.path.abspath(captchas_dir)
+    tmp_path = os.path.join(captchas_dir, '.tmp')
+    while True:
+        try:
+            data = request_captcha()
+            answer = antigate_ocr(api_key, data)
+            if not re.match(r'\d{6}$', answer):
+                raise Exception('bad antigate answer {}'.format(answer))
+            name = answer + '.png'
+            fpath = os.path.join(captchas_dir, name)
+            # In order to not leave partial files.
+            open(tmp_path, 'wb').write(data)
+            os.rename(tmp_path, fpath)
+        except Exception as exc:
+            report('Error occured while collecting: {}'.format(exc))
+        except KeyboardInterrupt:
+            try:
+                os.remove(tmp_path)
+            except IOError:
+                pass
+            break
+        else:
+            report('Saved {}'.format(name))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -221,12 +320,15 @@ def main():
         help='output file/directory')
     parser.add_argument(
         '-c', dest='crop', action='store_true',
-        help='show cropped chars')
+        help='crop chars (for show)')
     parser.add_argument(
         '-n', dest='netfile', metavar='netfile',
-        help='neural network')
+        help='neural network (for ocr)')
     parser.add_argument(
-        'mode', choices=['show', 'train', 'ocr'],
+        '-k', dest='keyfile', metavar='keyfile',
+        help='antigate key file (for collect)')
+    parser.add_argument(
+        'mode', choices=['show', 'train', 'ocr', 'collect'],
         help='operational mode')
     opts = parser.parse_args(sys.argv[1:])
     if opts.mode == 'show':
@@ -252,6 +354,13 @@ def main():
         ann = get_network(opts.netfile)
         img = get_image(opts.infile)
         print(ocr(ann, img))
+    elif opts.mode == 'collect':
+        if opts.outfile is None:
+            parser.error('specify output directory for captchas')
+        if opts.keyfile is None:
+            parser.error('specify antigate key file')
+        api_key = open(opts.keyfile, 'r').read().strip()
+        collect(opts.outfile, api_key)
 
 
 if __name__ == '__main__':
