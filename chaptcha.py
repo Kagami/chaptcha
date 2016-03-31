@@ -4,16 +4,26 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import os
+import re
 import sys
+import time
 import argparse
 import numpy as np
 import cv2
+from fann2 import libfann
 
 
 CAPTCHA_WIDTH = 220
 CAPTCHA_HEIGHT = 80
 CH_WIDTH = 22
 CH_HEIGHT = 44
+
+
+def get_image(fpath):
+    img = cv2.imread(fpath, 0)
+    assert(img is not None)
+    return img
 
 
 def preprocess(img):
@@ -37,15 +47,15 @@ def split(img):
             dots = np.sum(row) // 255
             if dots > THRESHOLD:
                 return y
-        assert(False)
+        raise Exception('cannot find filled row')
 
     def pad_ch(ch):
         pad_w = CH_WIDTH - len(ch.T)
-        assert(pad_w >= 0)
+        assert pad_w >= 0, 'bad char width'
         pad_w1 = pad_w // 2
         pad_w2 = pad_w - pad_w1
         pad_h = CH_HEIGHT - len(ch)
-        assert(pad_h >= 0)
+        assert pad_h >= 0, 'bad char height'
         pad_h1 = pad_h // 2
         pad_h2 = pad_h - pad_h1
         return np.pad(ch, ((pad_h1, pad_h2), (pad_w1, pad_w2)), 'constant')
@@ -113,7 +123,7 @@ def split(img):
             ch = ch[0:height, 0:CH_WIDTH]
             chars2.append(pad_ch(ch))
 
-    assert(len(chars2) == 6)
+    assert len(chars2) == 6, 'bad number of chars'
     return chars2
 
 
@@ -123,27 +133,125 @@ def show(img):
     cv2.destroyAllWindows()
 
 
+def report(line='', progress=False):
+    if progress:
+        line = '\033[1A\033[K' + line
+    line += '\n'
+    sys.stderr.write(line)
+
+
+def train(captchas_dir):
+    CONNECTION_RATE = 1
+    LEARNING_RATE = 0.7
+    NUM_INPUT = CH_WIDTH * CH_HEIGHT
+    NUM_NEURONS_HIDDEN = 144
+    NUM_OUTPUT = 10
+    ann = libfann.neural_net()
+    ann.create_sparse_array(CONNECTION_RATE,
+                            (NUM_INPUT, NUM_NEURONS_HIDDEN, NUM_OUTPUT))
+    ann.set_learning_rate(LEARNING_RATE)
+    ann.set_activation_function_hidden(libfann.SIGMOID_SYMMETRIC_STEPWISE)
+    ann.set_activation_function_output(libfann.SIGMOID_SYMMETRIC_STEPWISE)
+
+    start = time.time()
+    captchas_dir = os.path.abspath(captchas_dir)
+    captchas = os.listdir(captchas_dir)
+    succeed = 0
+    report()
+    for i, name in enumerate(captchas):
+        answers = re.match(r'(\d{6})\.png$', name)
+        if not answers:
+            continue
+        answers = answers.group(1)
+        fpath = os.path.join(captchas_dir, name)
+        try:
+            img = get_image(fpath)
+            img = preprocess(img)
+            ch_imgs = split(img)
+            for ch_img, answer in zip(ch_imgs, answers):
+                ann.train(img2data(ch_img), make_answer(answer))
+        except Exception as exc:
+            report('Error occured while processing {}: {}'.format(name, exc))
+            report()
+        else:
+            succeed += 1
+            report('{}/{}'.format(i + 1, len(captchas)), progress=True)
+    runtime = time.time() - start
+    report('Done training on {}/{} captchas in {:.3f} seconds'.format(
+           succeed, len(captchas), runtime))
+    return ann
+
+
+def img2data(img):
+    data = img.flatten() & 1
+    assert len(data) == CH_WIDTH * CH_HEIGHT, 'bad data size'
+    return data
+
+
+def make_answer(digit):
+    digit = int(digit)
+    answer = [-1] * 10
+    answer[digit] = 1
+    return answer
+
+
+def get_network(fpath):
+    ann = libfann.neural_net()
+    ann.create_from_file(fpath)
+    return ann
+
+
+def ocr(ann, img):
+    def find_answer(ch_img):
+        data = img2data(ch_img)
+        res = ann.run(data)
+        return str(res.index(max(res)))
+
+    img = preprocess(img)
+    return ''.join(map(find_answer, split(img)))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-i', dest='infile', metavar='infile',
-        help='input file')
+        help='input file/directory')
+    parser.add_argument(
+        '-o', dest='outfile', metavar='outfile',
+        help='output file/directory')
     parser.add_argument(
         '-c', dest='crop', action='store_true',
         help='show cropped chars')
     parser.add_argument(
-        'mode', choices=['show'],
+        '-n', dest='netfile', metavar='netfile',
+        help='neural network')
+    parser.add_argument(
+        'mode', choices=['show', 'train', 'ocr'],
         help='operational mode')
     opts = parser.parse_args(sys.argv[1:])
     if opts.mode == 'show':
         if opts.infile is None:
-            parser.error('specify input file')
-        img = cv2.imread(opts.infile, 0)
-        assert(img is not None)
+            parser.error('specify input captcha')
+        img = get_image(opts.infile)
         img = preprocess(img)
         if opts.crop:
             img = np.concatenate(split(img), axis=1)
         show(img)
+    elif opts.mode == 'train':
+        if opts.infile is None:
+            parser.error('specify input directory with captchas')
+        if opts.outfile is None:
+            parser.error('specify output file for network data')
+        ann = train(opts.infile)
+        ann.save(opts.outfile)
+    elif opts.mode == 'ocr':
+        if opts.infile is None:
+            parser.error('specify input captcha')
+        if opts.netfile is None:
+            parser.error('specify network file')
+        ann = get_network(opts.netfile)
+        img = get_image(opts.infile)
+        print(ocr(ann, img))
 
 
 if __name__ == '__main__':
