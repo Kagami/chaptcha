@@ -39,15 +39,13 @@ def split(img):
                 return y
         assert(False)
 
-    def pad_ch(ch, force_width=True):
+    def pad_ch(ch):
         pad_w = CH_WIDTH - len(ch.T)
-        if pad_w >= 0:
-            pad_w1 = pad_w // 2
-            pad_w2 = pad_w - pad_w1
-        else:
-            pad_w1 = 0
-            pad_w2 = 0
+        assert(pad_w >= 0)
+        pad_w1 = pad_w // 2
+        pad_w2 = pad_w - pad_w1
         pad_h = CH_HEIGHT - len(ch)
+        assert(pad_h >= 0)
         pad_h1 = pad_h // 2
         pad_h2 = pad_h - pad_h1
         return np.pad(ch, ((pad_h1, pad_h2), (pad_w1, pad_w2)), 'constant')
@@ -86,22 +84,29 @@ def split(img):
         prev = x
         x1 = find_filled_row(ch.T)
         x2 = len(ch.T) - find_filled_row(ch.T[::-1])
+        width = x2 - x1
+        # Don't allow more than CH_WIDTH * 2.
+        extra_w = width - CH_WIDTH * 2
+        extra_w1 = extra_w // 2
+        extra_w2 = extra_w - extra_w1
+        x1 = max(x1, x1 + extra_w1)
+        x2 = min(x2, x2 - extra_w2)
         y2 = CAPTCHA_HEIGHT - find_filled_row(ch[::-1])
         y1 = max(0, y2 - CH_HEIGHT)
         ch = ch[y1:y2, x1:x2]
         chars.append(ch)
-        if x2 - x1 > widest[0]:
+        if width > widest[0]:
             widest = x2 - x1, i
 
     # Fit chars into char box.
     chars2 = []
     for i, ch in enumerate(chars):
-        width, widest_idx = widest
+        widest_w, widest_i = widest
         height = len(ch)
         # Split glued chars.
-        if len(chars) < 6 and i == widest_idx:
-            ch1 = ch[0:height, 0:width // 2]
-            ch2 = ch[0:height, width // 2:width]
+        if len(chars) < 6 and i == widest_i:
+            ch1 = ch[0:height, 0:widest_w // 2]
+            ch2 = ch[0:height, widest_w // 2:widest_w]
             chars2.append(pad_ch(ch1))
             chars2.append(pad_ch(ch2))
         else:
