@@ -59,27 +59,27 @@ def decode_image(data):
     return img
 
 
-def ch2data(img):
+def get_network(fpath):
+    ann = libfann.neural_net()
+    assert ann.create_from_file(fpath), 'cannot init network'
+    return ann
+
+
+def get_ch_data(img):
     data = img.flatten() & 1
     assert len(data) == CH_WIDTH * CH_HEIGHT, 'bad data size'
     return data
 
 
-def make_answer(digit):
+def get_ann_output(digit):
     digit = int(digit)
-    answer = [-1] * 10
-    answer[digit] = 1
-    return answer
+    out = [-1] * 10
+    out[digit] = 1
+    return out
 
 
 def get_match(answer1, answer2):
     return sum(dg1 == dg2 for (dg1, dg2) in zip(answer1, answer2))
-
-
-def get_network(fpath):
-    ann = libfann.neural_net()
-    assert ann.create_from_file(fpath), 'cannot init network'
-    return ann
 
 
 def report(line='', progress=False):
@@ -104,7 +104,7 @@ def _get_lines(img):
     return lines
 
 
-def preprocess(img):
+def _preprocess(img):
     img = img.copy()
     img = _denoise(img)
     lines = _get_lines(img)
@@ -137,6 +137,7 @@ def split(img):
     DELTA = 8
 
     # Search blank intervals.
+    img = _preprocess(img)
     dots_per_col = np.apply_along_axis(lambda row: np.sum(row) // 255, 0, img)
     blanks = []
     was_blank = False
@@ -211,8 +212,7 @@ def vis(fpath):
 
     # Real result used for OCR.
     orig = get_image(fpath)
-    processed = preprocess(orig)
-    ch_imgs = split(processed)
+    ch_imgs = split(orig)
 
     # Visualizations.
     denoised = _denoise(orig)
@@ -220,7 +220,7 @@ def vis(fpath):
     for line in _get_lines(denoised):
         x1, y1, x2, y2 = line[0]
         cv2.line(with_lines, (x1, y1), (x2, y2), HIGH_COLOR, LINE_THICK)
-
+    processed = _preprocess(orig)
     with_rects = [np.pad(a, ((PAD_H,), (PAD_W,)), 'constant')
                   for a in ch_imgs]
     with_rects = np.concatenate(with_rects, axis=1)
@@ -263,17 +263,16 @@ def train(captchas_dir):
     captchas = os.listdir(captchas_dir)
     report()
     for i, name in enumerate(captchas):
-        answers = re.match(r'(\d{6})\.png$', name)
-        if not answers:
+        answer = re.match(r'(\d{6})\.png$', name)
+        if not answer:
             continue
-        answers = answers.group(1)
+        answer = answer.group(1)
         fpath = os.path.join(captchas_dir, name)
         try:
             img = get_image(fpath)
-            img = preprocess(img)
             ch_imgs = split(img)
-            for ch_img, answer in zip(ch_imgs, answers):
-                ann.train(ch2data(ch_img), make_answer(answer))
+            for ch_img, digit in zip(ch_imgs, answer):
+                ann.train(get_ch_data(ch_img), get_ann_output(digit))
         except Exception as exc:
             report('Error occured while processing {}: {}'.format(name, exc))
             report()
@@ -287,13 +286,11 @@ def train(captchas_dir):
 
 
 def ocr(ann, img):
-    def find_answer(ch_img):
-        data = ch2data(ch_img)
-        res = ann.run(data)
-        return str(res.index(max(res)))
-
-    img = preprocess(img)
-    return ''.join(map(find_answer, split(img)))
+    def get_digit(ch_img):
+        data = get_ch_data(ch_img)
+        out = ann.run(data)
+        return str(out.index(max(out)))
+    return ''.join(map(get_digit, split(img)))
 
 
 def ocr_bench(ann, captchas_dir):
@@ -303,7 +300,8 @@ def ocr_bench(ann, captchas_dir):
     correct = 0
     total = 0
     full = 0
-    for name in captchas:
+    report()
+    for i, name in enumerate(captchas):
         answer1 = re.match(r'(\d{6})\.png$', name)
         if not answer1:
             continue
@@ -313,13 +311,15 @@ def ocr_bench(ann, captchas_dir):
         try:
             img = get_image(fpath)
             answer2 = ocr(ann, img)
-        except Exception:
-            continue
+        except Exception as exc:
+            report('Error occured while processing {}: {}'.format(name, exc))
+            report()
         else:
             match = get_match(answer1, answer2)
             correct += match
             if match == NUM_CHARS:
                 full += match
+            report('{}/{}'.format(i + 1, len(captchas)), progress=True)
     runtime = time.time() - start
     report('{:.2f}% ({:.2f}% full) in {:.3f} seconds'.format(
            correct / total * 100,
