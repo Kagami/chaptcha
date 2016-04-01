@@ -23,15 +23,20 @@ CH_WIDTH = 22
 CH_HEIGHT = 44
 
 
+def check_image(img):
+    assert img is not None, 'cannot read image'
+    assert img.shape == (CAPTCHA_HEIGHT, CAPTCHA_WIDTH), 'bad image dimensions'
+
+
 def get_image(fpath):
     img = cv2.imread(fpath, 0)
-    assert img is not None, 'cannot read image'
+    check_image(img)
     return img
 
 
 def decode_image(data):
     img = cv2.imdecode(data, 0)
-    assert img is not None, 'cannot decode image'
+    check_image(img)
     return img
 
 
@@ -147,15 +152,14 @@ def split(img):
     chars2 = []
     for i, ch in enumerate(chars):
         widest_w, widest_i = widest
-        height = len(ch)
         # Split glued chars.
         if len(chars) < 6 and i == widest_i:
-            ch1 = ch[0:height, 0:widest_w // 2]
-            ch2 = ch[0:height, widest_w // 2:widest_w]
+            ch1 = ch[:, 0:widest_w // 2]
+            ch2 = ch[:, widest_w // 2:widest_w]
             chars2.append(pad_ch(ch1))
             chars2.append(pad_ch(ch2))
         else:
-            ch = ch[0:height, 0:CH_WIDTH]
+            ch = ch[:, 0:CH_WIDTH]
             chars2.append(pad_ch(ch))
 
     assert len(chars2) == 6, 'bad number of chars'
@@ -220,7 +224,7 @@ def ocr(ann, img):
     return ''.join(map(find_answer, split(img)))
 
 
-def antigate_ocr(api_key, data, timeout=50, ext='png',
+def antigate_ocr(api_key, data, timeout=60, ext='png',
                  is_numeric=True, min_len=6, max_len=6):
     FIRST_SLEEP = 7
     ATTEMPT_SLEEP = 2
@@ -260,7 +264,7 @@ def antigate_ocr(api_key, data, timeout=50, ext='png',
             raise Exception(res)
 
 
-def request_captcha():
+def get_captcha():
     CAPTCHA_URL = 'https://2ch.hk/makaba/captcha.fcgi'
     CAPTCHA_FIELDS = {
         'type': '2chaptcha',
@@ -296,7 +300,7 @@ def collect(captchas_dir, api_key):
     tmp_path = os.path.join(captchas_dir, '.tmp')
     while True:
         try:
-            data = request_captcha()
+            data = get_captcha()
             answer = antigate_ocr(api_key, data)
             if not re.match(r'\d{6}$', answer):
                 raise Exception('bad antigate answer {}'.format(answer))
@@ -319,11 +323,13 @@ def collect(captchas_dir, api_key):
 
 @bottle.post('/ocr')
 def serve():
-    captcha = bottle.request.files.get('file')
-    if not captcha:
-        bottle.abort(400, 'No captcha provided.')
+    bottle.response.set_header('Access-Control-Allow-Origin', '*')
+    try:
+        fh = bottle.request.files['file'].file
+    except Exception:
+        bottle.abort(400, 'No file provided.')
     ann = bottle.request.app.ann
-    img = decode_image(np.fromfile(captcha.file, dtype=np.uint8))
+    img = decode_image(np.fromfile(fh, dtype=np.uint8))
     return ocr(ann, img)
 
 
