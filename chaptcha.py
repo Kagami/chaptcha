@@ -73,8 +73,8 @@ def get_ch_data(img):
 
 def get_ann_output(digit):
     digit = int(digit)
-    out = [-1] * 10
-    out[digit] = 1
+    out = [0.0] * 10
+    out[digit] = 1.0
     return out
 
 
@@ -245,17 +245,14 @@ def vis(fpath):
 
 
 def train(captchas_dir):
-    CONNECTION_RATE = 1
-    LEARNING_RATE = 0.7
     NUM_INPUT = CH_WIDTH * CH_HEIGHT
-    NUM_NEURONS_HIDDEN = 144
+    NUM_NEURONS_HIDDEN = 400
     NUM_OUTPUT = 10
     ann = libfann.neural_net()
-    ann.create_sparse_array(CONNECTION_RATE,
-                            (NUM_INPUT, NUM_NEURONS_HIDDEN, NUM_OUTPUT))
-    ann.set_learning_rate(LEARNING_RATE)
-    ann.set_activation_function_hidden(libfann.SIGMOID_SYMMETRIC_STEPWISE)
-    ann.set_activation_function_output(libfann.SIGMOID_SYMMETRIC_STEPWISE)
+    ann.create_standard_array((NUM_INPUT, NUM_NEURONS_HIDDEN, NUM_OUTPUT))
+    # ann.set_activation_function_hidden(libfann.SIGMOID)
+    # ann.set_activation_function_output(libfann.SIGMOID)
+    # ann.randomize_weights(0.0, 0.0)
 
     start = time.time()
     succeed = 0
@@ -339,7 +336,6 @@ def antigate_ocr(api_key, data, timeout=90, ext='png',
     FIRST_SLEEP = 7
     ATTEMPT_SLEEP = 2
     start = datetime.now()
-
     # Uploading captcha.
     fields = {'key': api_key, 'method': 'post'}
     if is_numeric:
