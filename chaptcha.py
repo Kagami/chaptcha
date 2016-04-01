@@ -72,6 +72,10 @@ def make_answer(digit):
     return answer
 
 
+def get_match(answer1, answer2):
+    return sum(dg1 == dg2 for (dg1, dg2) in zip(answer1, answer2))
+
+
 def get_network(fpath):
     ann = libfann.neural_net()
     assert ann.create_from_file(fpath), 'cannot init network'
@@ -292,6 +296,37 @@ def ocr(ann, img):
     return ''.join(map(find_answer, split(img)))
 
 
+def ocr_bench(ann, captchas_dir):
+    start = time.time()
+    captchas_dir = os.path.abspath(captchas_dir)
+    captchas = os.listdir(captchas_dir)
+    correct = 0
+    total = 0
+    full = 0
+    for name in captchas:
+        answer1 = re.match(r'(\d{6})\.png$', name)
+        if not answer1:
+            continue
+        answer1 = answer1.group(1)
+        total += NUM_CHARS
+        fpath = os.path.join(captchas_dir, name)
+        try:
+            img = get_image(fpath)
+            answer2 = ocr(ann, img)
+        except Exception:
+            continue
+        else:
+            match = get_match(answer1, answer2)
+            correct += match
+            if match == NUM_CHARS:
+                full += match
+    runtime = time.time() - start
+    report('{:.2f}% ({:.2f}% full) in {:.3f} seconds'.format(
+           correct / total * 100,
+           full / total * 100,
+           runtime))
+
+
 def antigate_ocr(api_key, data, timeout=90, ext='png',
                  is_numeric=True, min_len=6, max_len=6,
                  lock=None):
@@ -435,7 +470,8 @@ def main():
         description=doc,
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
-        'mode', choices=['vis', 'collect', 'train', 'ocr', 'serve'],
+        'mode',
+        choices=['vis', 'collect', 'train', 'ocr', 'ocr-bench', 'serve'],
         help='operational mode')
     parser.add_argument(
         '-V', '--version',
@@ -481,6 +517,13 @@ def main():
         ann = get_network(opts.netfile)
         img = get_image(opts.infile)
         print(ocr(ann, img))
+    elif opts.mode == 'ocr-bench':
+        if opts.infile is None:
+            parser.error('specify input directory with captchas')
+        if opts.netfile is None:
+            parser.error('specify network file')
+        ann = get_network(opts.netfile)
+        ocr_bench(ann, opts.infile)
     elif opts.mode == 'collect':
         if opts.outfile is None:
             parser.error('specify output directory for captchas')
