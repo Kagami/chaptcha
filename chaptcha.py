@@ -34,10 +34,12 @@ __version__ = '0.0.0'
 __license__ = 'CC0'
 
 
+NUM_CHARS = 6
 CAPTCHA_WIDTH = 220
 CAPTCHA_HEIGHT = 80
 CH_WIDTH = 22
 CH_HEIGHT = 44
+LINE_THICK = 2
 
 
 def check_image(img):
@@ -57,7 +59,7 @@ def decode_image(data):
     return img
 
 
-def img2data(img):
+def ch2data(img):
     data = img.flatten() & 1
     assert len(data) == CH_WIDTH * CH_HEIGHT, 'bad data size'
     return data
@@ -83,18 +85,28 @@ def report(line='', progress=False):
     sys.stderr.write(line)
 
 
-def preprocess(img):
-    # Remove noise.
+def _denoise(img):
     img = cv2.fastNlMeansDenoising(img, None, 65, 5, 21)
     img = cv2.threshold(img, 128, 255,
                         cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-    # Remove lines.
+    return img
+
+
+def _get_lines(img):
     lines = cv2.HoughLinesP(img, 1, np.pi / 180, 100,
                             minLineLength=100, maxLineGap=100)
-    if lines is not None:
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            cv2.line(img, (x1, y1), (x2, y2), 0, 2)
+    if lines is None:
+        lines = []
+    return lines
+
+
+def preprocess(img):
+    img = img.copy()
+    img = _denoise(img)
+    lines = _get_lines(img)
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        cv2.line(img, (x1, y1), (x2, y2), 0, LINE_THICK)
     return img
 
 
@@ -170,7 +182,7 @@ def split(img):
     for i, ch in enumerate(chars):
         widest_w, widest_i = widest
         # Split glued chars.
-        if len(chars) < 6 and i == widest_i:
+        if len(chars) < NUM_CHARS and i == widest_i:
             ch1 = ch[:, 0:widest_w // 2]
             ch2 = ch[:, widest_w // 2:widest_w]
             chars2.append(pad_ch(ch1))
@@ -179,15 +191,51 @@ def split(img):
             ch = ch[:, 0:CH_WIDTH]
             chars2.append(pad_ch(ch))
 
-    assert len(chars2) == 6, 'bad number of chars'
+    assert len(chars2) == NUM_CHARS, 'bad number of chars'
     return chars2
 
 
 def vis(fpath):
-    img = get_image(fpath)
-    img = preprocess(img)
-    img = np.concatenate(split(img), axis=1)
-    cv2.imshow('opencv-result', img)
+    BOX_W = CAPTCHA_WIDTH // NUM_CHARS
+    PAD_W = (BOX_W - CH_WIDTH) // 2
+    PAD_H = (CAPTCHA_HEIGHT - CH_HEIGHT) // 2
+    EXTRA_PAD_W = (CAPTCHA_WIDTH % NUM_CHARS) // 2
+    HIGH_COLOR = (0, 255, 0)
+
+    def to_rgb(img):
+        return cv2.merge([img] * 3)
+
+    # Real result used for OCR.
+    orig = get_image(fpath)
+    processed = preprocess(orig)
+    ch_imgs = split(processed)
+
+    # Visualizations.
+    denoised = _denoise(orig)
+    with_lines = to_rgb(denoised.copy())
+    for line in _get_lines(denoised):
+        x1, y1, x2, y2 = line[0]
+        cv2.line(with_lines, (x1, y1), (x2, y2), HIGH_COLOR, LINE_THICK)
+
+    with_rects = [np.pad(a, ((PAD_H,), (PAD_W,)), 'constant')
+                  for a in ch_imgs]
+    with_rects = np.concatenate(with_rects, axis=1)
+    with_rects = np.pad(with_rects, ((0,), (EXTRA_PAD_W,)), 'constant')
+    with_rects = to_rgb(with_rects)
+    for i in range(NUM_CHARS):
+        x1 = i * BOX_W + PAD_W + EXTRA_PAD_W
+        x2 = x1 + CH_WIDTH
+        y1 = PAD_H
+        y2 = y1 + CH_HEIGHT
+        cv2.rectangle(with_rects, (x1, y1), (x2, y2), HIGH_COLOR, 2)
+
+    res = np.concatenate((
+        to_rgb(orig),
+        to_rgb(denoised),
+        with_lines,
+        to_rgb(processed),
+        with_rects))
+    cv2.imshow('opencv-result', res)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
@@ -221,7 +269,7 @@ def train(captchas_dir):
             img = preprocess(img)
             ch_imgs = split(img)
             for ch_img, answer in zip(ch_imgs, answers):
-                ann.train(img2data(ch_img), make_answer(answer))
+                ann.train(ch2data(ch_img), make_answer(answer))
         except Exception as exc:
             report('Error occured while processing {}: {}'.format(name, exc))
             report()
@@ -236,7 +284,7 @@ def train(captchas_dir):
 
 def ocr(ann, img):
     def find_answer(ch_img):
-        data = img2data(ch_img)
+        data = ch2data(ch_img)
         res = ann.run(data)
         return str(res.index(max(res)))
 
