@@ -245,7 +245,7 @@ def antigate_ocr(api_key, data, timeout=60, ext='png',
         raise Exception(res)
     captcha_id = res[3:]
     # Getting captcha text.
-    fields = {
+    fields2 = {
         'key': api_key,
         'action': 'get',
         'id': captcha_id,
@@ -253,7 +253,7 @@ def antigate_ocr(api_key, data, timeout=60, ext='png',
     time.sleep(FIRST_SLEEP)
     while True:
         res = requests.get('http://anti-captcha.com/res.php',
-                           params=fields).text
+                           params=fields2).text
         if res.startswith('OK|'):
             return res[3:]
         elif res == 'CAPCHA_NOT_READY':
