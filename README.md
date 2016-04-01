@@ -4,7 +4,9 @@ Break CAPTCHA at 2ch.hk using OpenCV and FANN. Just for fun.
 
 ## Demo
 
-*TODO*
+<p align="center">
+  <a href="https://raw.githubusercontent.com/Kagami/chaptcha/assets/vis.png"><img src="https://raw.githubusercontent.com/Kagami/chaptcha/assets/vis.png"></a>
+</p>
 
 ## Requirements
 
