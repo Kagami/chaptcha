@@ -10,6 +10,7 @@ import sys
 import time
 import argparse
 from datetime import datetime
+import threading
 import numpy as np
 import cv2
 from fann2 import libfann
@@ -224,8 +225,15 @@ def ocr(ann, img):
     return ''.join(map(find_answer, split(img)))
 
 
-def antigate_ocr(api_key, data, timeout=60, ext='png',
-                 is_numeric=True, min_len=6, max_len=6):
+def antigate_ocr(api_key, data, timeout=90, ext='png',
+                 is_numeric=True, min_len=6, max_len=6,
+                 lock=None):
+    def check_lock():
+        if lock is None:
+            return True
+        else:
+            return lock.is_set()
+
     FIRST_SLEEP = 7
     ATTEMPT_SLEEP = 2
     start = datetime.now()
@@ -251,7 +259,7 @@ def antigate_ocr(api_key, data, timeout=60, ext='png',
         'id': captcha_id,
     }
     time.sleep(FIRST_SLEEP)
-    while True:
+    while check_lock():
         res = requests.get('http://anti-captcha.com/res.php',
                            params=fields2).text
         if res.startswith('OK|'):
@@ -262,6 +270,7 @@ def antigate_ocr(api_key, data, timeout=60, ext='png',
             time.sleep(ATTEMPT_SLEEP)
         else:
             raise Exception(res)
+    raise Exception('antigate_ocr canceled')
 
 
 def get_captcha():
@@ -295,13 +304,11 @@ def get_captcha():
     return r.content
 
 
-def collect(captchas_dir, api_key):
-    captchas_dir = os.path.abspath(captchas_dir)
-    tmp_path = os.path.join(captchas_dir, '.tmp')
-    while True:
+def collect(lock, captchas_dir, tmp_path, api_key):
+    while lock.is_set():
         try:
             data = get_captcha()
-            answer = antigate_ocr(api_key, data)
+            answer = antigate_ocr(api_key, data, lock=lock)
             if not re.match(r'\d{6}$', answer):
                 raise Exception('bad antigate answer {}'.format(answer))
             name = answer + '.png'
@@ -311,14 +318,35 @@ def collect(captchas_dir, api_key):
             os.rename(tmp_path, fpath)
         except Exception as exc:
             report('Error occured while collecting: {}'.format(exc))
-        except KeyboardInterrupt:
-            try:
-                os.remove(tmp_path)
-            except IOError:
-                pass
-            break
         else:
             report('Saved {}'.format(name))
+
+
+def run_collect_threads(captchas_dir, api_key):
+    NUM_THREADS = 10
+    SPAWN_DELAY = 0.5
+
+    threads = []
+    lock = threading.Event()
+    lock.set()
+    captchas_dir = os.path.abspath(captchas_dir)
+
+    for i in range(NUM_THREADS):
+        tmp_path = os.path.join(captchas_dir, '.{}.tmp'.format(i))
+        thread = threading.Thread(target=collect,
+                                  args=(lock, captchas_dir, tmp_path, api_key))
+        threads.append(thread)
+        thread.start()
+        time.sleep(SPAWN_DELAY)
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        report('Closing threads')
+        lock.clear()
+        for thread in threads:
+            thread.join()
 
 
 @bottle.post('/ocr')
@@ -391,7 +419,7 @@ def main():
         if opts.keyfile is None:
             parser.error('specify antigate key file')
         api_key = open(opts.keyfile, 'r').read().strip()
-        collect(opts.outfile, api_key)
+        run_collect_threads(opts.outfile, api_key)
     elif opts.mode == 'serve':
         if opts.netfile is None:
             parser.error('specify network file')
