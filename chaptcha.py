@@ -299,7 +299,7 @@ def get_captcha():
         'id': captcha_id,
     }
     r = requests.get(CAPTCHA_URL, params=fields2, headers=CAPTCHA_HEADERS)
-    if r.headers['Content-Type'] != 'image/png':
+    if r.headers.get('Content-Type') != 'image/png':
         raise Exception('bad captcha result')
     return r.content
 
