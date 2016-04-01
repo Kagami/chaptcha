@@ -1,5 +1,16 @@
 #!/usr/bin/env python
 
+"""
+recognize CAPTCHA at 2ch.hk
+
+examples:
+  python {title} vis     -i captcha.png
+  python {title} collect -o captchas/ -k ag.txt
+  python {title} train   -i captchas/ -o my.net
+  python {title} ocr     -i captcha.png -n my.net
+  python {title} serve   -n my.net
+"""
+
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
@@ -16,6 +27,11 @@ import cv2
 from fann2 import libfann
 import requests
 import bottle
+
+
+__title__ = 'chaptcha.py'
+__version__ = '0.0.0'
+__license__ = 'CC0'
 
 
 CAPTCHA_WIDTH = 220
@@ -167,7 +183,10 @@ def split(img):
     return chars2
 
 
-def show(img):
+def vis(fpath):
+    img = get_image(fpath)
+    img = preprocess(img)
+    img = np.concatenate(split(img), axis=1)
     cv2.imshow('opencv-result', img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
@@ -362,7 +381,18 @@ def serve():
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    doc = __doc__.format(title=__title__)
+    parser = argparse.ArgumentParser(
+        prog=__title__,
+        description=doc,
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument(
+        'mode', choices=['vis', 'collect', 'train', 'ocr', 'serve'],
+        help='operational mode')
+    parser.add_argument(
+        '-V', '--version',
+        action='version',
+        version='%(prog)s ' + __version__)
     parser.add_argument(
         '-i', dest='infile', metavar='infile',
         help='input file/directory')
@@ -370,34 +400,24 @@ def main():
         '-o', dest='outfile', metavar='outfile',
         help='output file/directory')
     parser.add_argument(
-        '-c', dest='crop', action='store_true',
-        help='crop chars (for show)')
+        '-k', dest='keyfile', metavar='keyfile',
+        help='antigate key file')
     parser.add_argument(
         '-n', dest='netfile', metavar='netfile',
-        help='neural network (for ocr & serve)')
-    parser.add_argument(
-        '-k', dest='keyfile', metavar='keyfile',
-        help='antigate key file (for collect)')
-    parser.add_argument(
-        '-p', dest='port', metavar='port',
-        type=int, default=28228,
-        help='listening port (for serve, default: %(default)s)')
+        help='neural network')
     parser.add_argument(
         '-b', dest='host', metavar='host',
         default='127.0.0.1',
-        help='listening address (for serve, default: %(default)s)')
+        help='listening address (default: %(default)s)')
     parser.add_argument(
-        'mode', choices=['show', 'train', 'ocr', 'collect', 'serve'],
-        help='operational mode')
+        '-p', dest='port', metavar='port',
+        type=int, default=28228,
+        help='listening port (default: %(default)s)')
     opts = parser.parse_args(sys.argv[1:])
-    if opts.mode == 'show':
+    if opts.mode == 'vis':
         if opts.infile is None:
             parser.error('specify input captcha')
-        img = get_image(opts.infile)
-        img = preprocess(img)
-        if opts.crop:
-            img = np.concatenate(split(img), axis=1)
-        show(img)
+        vis(opts.infile)
     elif opts.mode == 'train':
         if opts.infile is None:
             parser.error('specify input directory with captchas')
