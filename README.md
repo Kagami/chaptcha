@@ -1,10 +1,10 @@
 # chaptcha
 
-Break CAPTCHA at 2ch.hk using OpenCV and FANN. Just for fun.
+Break CAPTCHA at 2ch.hk using OpenCV and FANN. Just for fun (UWBFTP).
 
 ## Demo
 
-Demo backend is available at `ch.genshiken.org`, just [install userscript](https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js) (UWBFTP).
+Demo backend is available at `ch.genshiken.org`, just [install userscript](https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js).
 
 ![](https://raw.githubusercontent.com/Kagami/chaptcha/assets/vis.png)
 ![](https://raw.githubusercontent.com/Kagami/chaptcha/assets/cap.gif)
@@ -20,7 +20,18 @@ Demo backend is available at `ch.genshiken.org`, just [install userscript](https
 
 ## Usage
 
-*TODO*
+```bash
+# Visualize preprocess/segmentation steps
+python chaptcha.py vis     -i captcha.png
+# Collect training data
+python chaptcha.py collect -o captchas/ -k ag.txt
+# Train neural network
+python chaptcha.py train   -i captchas/ -o my.net
+# Recognize CAPTCHA
+python chaptcha.py ocr     -i captcha.png -n my.net
+# Host OCR backend (for chaptcha.user.js)
+python chaptcha.py serve   -n my.net
+```
 
 ## Links
 
