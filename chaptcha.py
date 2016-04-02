@@ -99,8 +99,8 @@ def report(line='', progress=False):
 def mkdirp(dpath):
     try:
         os.makedirs(dpath)
-    except OSError as exception:
-        if exception.errno != errno.EEXIST:
+    except OSError as exc:
+        if exc.errno != errno.EEXIST:
             raise
 
 
@@ -216,14 +216,14 @@ def segment(img):
 
 
 def vis(fpath):
+    def to_rgb(img):
+        return cv2.merge([img] * 3)
+
     BOX_W = CAPTCHA_WIDTH // NUM_CHARS
     PAD_W = (BOX_W - CH_WIDTH) // 2
     PAD_H = (CAPTCHA_HEIGHT - CH_HEIGHT) // 2
     EXTRA_PAD_W = (CAPTCHA_WIDTH % NUM_CHARS) // 2
     HIGH_COLOR = (0, 255, 0)
-
-    def to_rgb(img):
-        return cv2.merge([img] * 3)
 
     # Real result used for OCR.
     orig = get_image(fpath)
