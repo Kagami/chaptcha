@@ -459,7 +459,7 @@ def serve():
     except Exception:
         bottle.abort(400, 'No file provided.')
     # TODO: Probably there is a better way to store obj ref?
-    ann = bottle.request.app.ann
+    ann = bottle.default_app().ann
     img = decode_image(np.fromfile(fh, dtype=np.uint8))
     return ocr(ann, img)
 
