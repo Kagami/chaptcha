@@ -11,7 +11,7 @@
 
 // TODO: Some better way to store that setting?
 var OCR_BACKEND_URL = localStorage.getItem("OCR_BACKEND_URL") ||
-                      "http://127.0.0.1:28228";
+                      "https://ch.genshiken.org";
 
 function getImageData(img) {
   return new Promise(function(resolve, reject) {
