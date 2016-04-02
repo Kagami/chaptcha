@@ -22,15 +22,15 @@ Demo backend is available at `ch.genshiken.org`, just [install userscript](https
 
 ```bash
 # Visualize preprocess/segmentation steps
-python chaptcha.py vis     -i captcha.png
+python chaptcha.py vis -i captcha.png
 # Collect training data
 python chaptcha.py collect -o captchas/ -k ag.txt
 # Train neural network
-python chaptcha.py train   -i captchas/ -o my.net
+python chaptcha.py train -i captchas/ -o my.net
 # Recognize CAPTCHA
-python chaptcha.py ocr     -i captcha.png -n my.net
+python chaptcha.py ocr -i captcha.png -n my.net
 # Host OCR backend (for chaptcha.user.js)
-python chaptcha.py serve   -n my.net
+python chaptcha.py serve -n my.net
 ```
 
 ## Links
