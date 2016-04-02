@@ -339,18 +339,23 @@ def ocr_bench(ann, captchas_dir):
            runtime))
 
 
+class FatalAntigateError(Exception):
+    pass
+
+
 def antigate_ocr(api_key, data, timeout=90, ext='png',
                  is_numeric=True, min_len=6, max_len=6,
-                 lock=None):
-    def check_lock():
-        if lock is None:
+                 run=None):
+    def check_run():
+        if run is None:
             return True
         else:
-            return lock.is_set()
+            return run.is_set()
 
     FIRST_SLEEP = 7
     ATTEMPT_SLEEP = 2
     start = datetime.now()
+
     # Uploading captcha.
     fields = {'key': api_key, 'method': 'post'}
     if is_numeric:
@@ -362,9 +367,17 @@ def antigate_ocr(api_key, data, timeout=90, ext='png',
     files = {'file': ('captcha.' + ext, data)}
     res = requests.post('http://anti-captcha.com/in.php',
                         data=fields, files=files).text
-    if not res.startswith('OK|'):
+    if res in [
+        'ERROR_WRONG_USER_KEY',
+        'ERROR_KEY_DOES_NOT_EXIST',
+        'ERROR_ZERO_BALANCE',
+        'ERROR_IP_NOT_ALLOWED',
+    ]:
+        raise FatalAntigateError(res)
+    elif not res.startswith('OK|'):
         raise Exception(res)
     captcha_id = res[3:]
+
     # Getting captcha text.
     fields2 = {
         'key': api_key,
@@ -372,13 +385,14 @@ def antigate_ocr(api_key, data, timeout=90, ext='png',
         'id': captcha_id,
     }
     time.sleep(FIRST_SLEEP)
-    while check_lock():
+    while check_run():
         res = requests.get('http://anti-captcha.com/res.php',
                            params=fields2).text
         if res.startswith('OK|'):
             return res[3:]
         elif res == 'CAPCHA_NOT_READY':
-            if (datetime.now() - start).seconds >= timeout:
+            delta = datetime.now() - start
+            if delta.seconds >= timeout or delta.days > 0:
                 raise Exception('getting captcha text timeout')
             time.sleep(ATTEMPT_SLEEP)
         else:
@@ -400,6 +414,7 @@ def get_captcha():
     )
     CAPTCHA_HEADERS = {
         'User-Agent': CHROME_UA,
+        'Referer': 'https://2ch.hk/s/',
     }
     res = requests.get(CAPTCHA_URL, params=CAPTCHA_FIELDS,
                        headers=CAPTCHA_HEADERS).text
@@ -417,11 +432,11 @@ def get_captcha():
     return r.content
 
 
-def collect(lock, captchas_dir, tmp_path, api_key):
-    while lock.is_set():
+def collect(run, captchas_dir, tmp_path, api_key):
+    while run.is_set():
         try:
             data = get_captcha()
-            answer = antigate_ocr(api_key, data, lock=lock)
+            answer = antigate_ocr(api_key, data, run=run)
             if not re.match(r'\d{6}$', answer):
                 raise Exception('bad antigate answer {}'.format(answer))
             name = answer + '.png'
@@ -429,10 +444,17 @@ def collect(lock, captchas_dir, tmp_path, api_key):
             # In order to not leave partial files.
             open(tmp_path, 'wb').write(data)
             os.rename(tmp_path, fpath)
+        except FatalAntigateError as exc:
+            if run.is_set():
+                report('Fatal antigate error ({}), exiting'.format(exc))
+                run.clear()
+            return
         except Exception as exc:
             report('Error occured while collecting: {}'.format(exc))
         else:
             report('Saved {}'.format(name))
+        # Just in case antigate response was too fast.
+        time.sleep(1)
 
 
 def run_collect_threads(captchas_dir, api_key):
@@ -440,25 +462,26 @@ def run_collect_threads(captchas_dir, api_key):
     SPAWN_DELAY = 0.5
 
     threads = []
-    lock = threading.Event()
-    lock.set()
+    run = threading.Event()
+    run.set()
     captchas_dir = os.path.abspath(captchas_dir)
     mkdirp(captchas_dir)
 
     for i in range(NUM_THREADS):
         tmp_path = os.path.join(captchas_dir, '.{}.tmp'.format(i))
         thread = threading.Thread(target=collect,
-                                  args=(lock, captchas_dir, tmp_path, api_key))
+                                  args=(run, captchas_dir, tmp_path, api_key))
         threads.append(thread)
         thread.start()
+        # Slightly smooth initial fetch burst.
         time.sleep(SPAWN_DELAY)
 
     try:
-        while True:
+        while run.is_set():
             time.sleep(1)
     except KeyboardInterrupt:
         report('Closing threads')
-        lock.clear()
+        run.clear()
         for thread in threads:
             thread.join()
 
