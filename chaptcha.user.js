@@ -2,6 +2,8 @@
 // @name        chaptcha
 // @namespace   https://2chk.hk/chaptcha
 // @description Automatically enter captcha on 2ch.hk using chaptcha.py backend
+// @downloadURL https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js
+// @updateURL   https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js
 // @include     https://2ch.hk/*
 // @version     0.0.1
 // @grant       none
