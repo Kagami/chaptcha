@@ -24,7 +24,11 @@ from datetime import datetime
 import threading
 import numpy as np
 import cv2
-from fann2 import libfann
+try:
+    from fann2 import libfann
+except ImportError:
+    # Ubuntu < 16.04
+    from pyfann import libfann
 import requests
 import bottle
 
