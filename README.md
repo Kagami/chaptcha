@@ -39,9 +39,9 @@ python chaptcha.py serve -n my.net
 * [Hough Line Transform](http://docs.opencv.org/3.1.0/d6/d10/tutorial_py_houghlines.html)
 * [Python FANN tutorial](http://jansipke.nl/using-fann-with-python/)
 * [Break simple CAPTCHA](https://habrahabr.ru/post/63854/)
-* [Break another simple CAPTCHA](http://cybern.ru/raspoznavanie-kapchi-captcha.html)
 * [Break ifolder CAPTCHA](https://geektimes.ru/post/67194/)
 * [Break rzd CAPTCHA](https://toster.ru/q/216509)
+* [Break ops CAPTCHA](https://habrahabr.ru/post/116222/)
 
 ## License
 
