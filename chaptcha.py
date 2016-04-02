@@ -101,7 +101,7 @@ def _get_lines(img):
                             minLineLength=100, maxLineGap=100)
     if lines is None:
         lines = []
-    return lines
+    return [line[0] for line in lines]
 
 
 def _preprocess(img):
@@ -109,12 +109,12 @@ def _preprocess(img):
     img = _denoise(img)
     lines = _get_lines(img)
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        x1, y1, x2, y2 = line
         cv2.line(img, (x1, y1), (x2, y2), 0, LINE_THICK)
     return img
 
 
-def split(img):
+def segment(img):
     def find_filled_row(rows):
         for y, row in enumerate(rows):
             dots = np.sum(row) // 255
@@ -212,13 +212,13 @@ def vis(fpath):
 
     # Real result used for OCR.
     orig = get_image(fpath)
-    ch_imgs = split(orig)
+    ch_imgs = segment(orig)
 
     # Visualizations.
     denoised = _denoise(orig)
     with_lines = to_rgb(denoised.copy())
     for line in _get_lines(denoised):
-        x1, y1, x2, y2 = line[0]
+        x1, y1, x2, y2 = line
         cv2.line(with_lines, (x1, y1), (x2, y2), HIGH_COLOR, LINE_THICK)
     processed = _preprocess(orig)
     with_rects = [np.pad(a, ((PAD_H,), (PAD_W,)), 'constant')
@@ -267,7 +267,7 @@ def train(captchas_dir):
         fpath = os.path.join(captchas_dir, name)
         try:
             img = get_image(fpath)
-            ch_imgs = split(img)
+            ch_imgs = segment(img)
             for ch_img, digit in zip(ch_imgs, answer):
                 ann.train(get_ch_data(ch_img), get_ann_output(digit))
         except Exception as exc:
@@ -287,7 +287,7 @@ def ocr(ann, img):
         data = get_ch_data(ch_img)
         out = ann.run(data)
         return str(out.index(max(out)))
-    return ''.join(map(get_digit, split(img)))
+    return ''.join(map(get_digit, segment(img)))
 
 
 def ocr_bench(ann, captchas_dir):
