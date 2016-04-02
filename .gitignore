@@ -1,5 +1,6 @@
 *.pyc
 *.net
-*.png
 *.tmp
+*.png
+!/test-set/*
 /.venv/
