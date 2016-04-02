@@ -2,3 +2,4 @@
 *.net
 *.png
 *.tmp
+/.venv/

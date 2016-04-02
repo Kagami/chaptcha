@@ -454,9 +454,16 @@ def serve():
         fh = bottle.request.files['file'].file
     except Exception:
         bottle.abort(400, 'No file provided.')
+    # TODO: Probably there is a better way to store obj ref?
     ann = bottle.request.app.ann
     img = decode_image(np.fromfile(fh, dtype=np.uint8))
     return ocr(ann, img)
+
+
+def create_app():
+    app = bottle.default_app()
+    app.ann = get_network(os.environ['CHAPTCHA_NETFILE'])
+    return app
 
 
 def main():
