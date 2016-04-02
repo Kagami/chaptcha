@@ -7,6 +7,7 @@ Break CAPTCHA at 2ch.hk using OpenCV and FANN. Just for fun.
 Demo backend is available at `ch.genshiken.org`, just [install userscript](https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js) (UWBFTP).
 
 ![](https://raw.githubusercontent.com/Kagami/chaptcha/assets/vis.png)
+![](https://raw.githubusercontent.com/Kagami/chaptcha/assets/cap.gif)
 
 ## Requirements
 
