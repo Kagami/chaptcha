@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+import errno
 import argparse
 from datetime import datetime
 import threading
@@ -93,6 +94,14 @@ def report(line='', progress=False):
         line = '\033[1A\033[K' + line
     line += '\n'
     sys.stderr.write(line)
+
+
+def mkdirp(dpath):
+    try:
+        os.makedirs(dpath)
+    except OSError as exception:
+        if exception.errno != errno.EEXIST:
+            raise
 
 
 def _denoise(img):
@@ -434,6 +443,7 @@ def run_collect_threads(captchas_dir, api_key):
     lock = threading.Event()
     lock.set()
     captchas_dir = os.path.abspath(captchas_dir)
+    mkdirp(captchas_dir)
 
     for i in range(NUM_THREADS):
         tmp_path = os.path.join(captchas_dir, '.{}.tmp'.format(i))
