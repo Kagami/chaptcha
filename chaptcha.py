@@ -44,6 +44,8 @@ CAPTCHA_HEIGHT = 80
 CH_WIDTH = 22
 CH_HEIGHT = 44
 LINE_THICK = 2
+# See <https://github.com/numpy/numpy/issues/7112>.
+_CONSTANT = str('constant')
 
 
 def check_image(img):
@@ -135,7 +137,7 @@ def segment(img):
         assert pad_h >= 0, 'bad char height'
         pad_h1 = pad_h // 2
         pad_h2 = pad_h - pad_h1
-        return np.pad(ch, ((pad_h1, pad_h2), (pad_w1, pad_w2)), 'constant')
+        return np.pad(ch, ((pad_h1, pad_h2), (pad_w1, pad_w2)), _CONSTANT)
 
     THRESHOLD = 3
     DELTA = 8
@@ -225,10 +227,10 @@ def vis(fpath):
         x1, y1, x2, y2 = line
         cv2.line(with_lines, (x1, y1), (x2, y2), HIGH_COLOR, LINE_THICK)
     processed = _preprocess(orig)
-    with_rects = [np.pad(a, ((PAD_H,), (PAD_W,)), 'constant')
+    with_rects = [np.pad(a, ((PAD_H,), (PAD_W,)), _CONSTANT)
                   for a in ch_imgs]
     with_rects = np.concatenate(with_rects, axis=1)
-    with_rects = np.pad(with_rects, ((0,), (EXTRA_PAD_W,)), 'constant')
+    with_rects = np.pad(with_rects, ((0,), (EXTRA_PAD_W,)), _CONSTANT)
     with_rects = to_rgb(with_rects)
     for i in range(NUM_CHARS):
         x1 = i * BOX_W + PAD_W + EXTRA_PAD_W

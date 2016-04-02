@@ -9,6 +9,7 @@ Break CAPTCHA at 2ch.hk using OpenCV and FANN. Just for fun.
 ## Requirements
 
 * [Python](https://www.python.org/) 2.7+ or 3.2+
+* [NumPy](http://www.numpy.org/) 1.7+
 * [OpenCV](http://opencv.org/) 2.4+ with Python bindings
 * [FANN](http://leenissen.dk/fann/wp/) 2.1+ with Python bindings
 * [requests](http://python-requests.org/) 2+
