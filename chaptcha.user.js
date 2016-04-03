@@ -5,7 +5,7 @@
 // @downloadURL https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js
 // @updateURL   https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js
 // @include     https://2ch.hk/*
-// @version     0.0.1
+// @version     0.0.2
 // @grant       none
 // ==/UserScript==
 
@@ -50,7 +50,7 @@ function setAnswer(answer) {
   document.getElementById("qr-captcha-value").value = answer;
 }
 
-document.addEventListener("DOMContentLoaded", function() {
+function initChaptcha() {
   var container = document.getElementById("captcha-widget-main");
   if (!container) return;
   var observer = new MutationObserver(function(mutations) {
@@ -71,4 +71,6 @@ document.addEventListener("DOMContentLoaded", function() {
   // Captcha updates synchronously in all places so it's enough to
   // observe only single one.
   observer.observe(container, {childList: true});
-}, false);
+}
+
+initChaptcha();
