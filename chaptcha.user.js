@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        chaptcha
 // @namespace   https://2chk.hk/chaptcha
-// @description Automatically enter captcha on 2ch.hk using chaptcha.py backend
+// @description Automatically enter captcha at 2ch.hk using chaptcha.py backend
 // @downloadURL https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js
 // @updateURL   https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js
 // @include     https://2ch.hk/*
