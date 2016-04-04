@@ -23,6 +23,7 @@ import errno
 import argparse
 from datetime import datetime
 import threading
+import traceback
 import numpy as np
 import cv2
 try:
@@ -43,7 +44,7 @@ NUM_CHARS = 6
 CAPTCHA_WIDTH = 220
 CAPTCHA_HEIGHT = 80
 CH_WIDTH = 22
-CH_HEIGHT = 44
+CH_HEIGHT = 40
 LINE_THICK = 2
 # See <https://github.com/numpy/numpy/issues/7112>.
 _CONSTANT = str('constant')
@@ -78,7 +79,7 @@ def get_ch_data(img):
     return data
 
 
-def get_ann_output(digit):
+def make_ann_output(digit):
     digit = int(digit)
     out = [0.0] * 10
     out[digit] = 1.0
@@ -106,8 +107,7 @@ def mkdirp(dpath):
 
 def _denoise(img):
     img = cv2.fastNlMeansDenoising(img, None, 65, 5, 21)
-    img = cv2.threshold(img, 128, 255,
-                        cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+    img = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY_INV)[1]
     return img
 
 
@@ -131,11 +131,11 @@ def _preprocess(img):
 
 def segment(img):
     def find_filled_row(rows):
-        for y, row in enumerate(rows):
+        for i, row in enumerate(rows):
             dots = np.sum(row) // 255
-            if dots > THRESHOLD:
-                return y
-        raise Exception('cannot find filled row')
+            if dots >= DOTS_THRESHOLD:
+                return i
+        assert False, 'cannot find filled row'
 
     def pad_ch(ch):
         pad_w = CH_WIDTH - len(ch.T)
@@ -148,41 +148,46 @@ def segment(img):
         pad_h2 = pad_h - pad_h1
         return np.pad(ch, ((pad_h1, pad_h2), (pad_w1, pad_w2)), _CONSTANT)
 
-    THRESHOLD = 3
-    DELTA = 8
+    BLANK_THRESHHOLD = 3
+    DOTS_THRESHOLD = 3
+    CH_MIN_WIDTH = 8
 
     # Search blank intervals.
     img = _preprocess(img)
     dots_per_col = np.apply_along_axis(lambda row: np.sum(row) // 255, 0, img)
     blanks = []
     was_blank = False
-    prev = 0
+    first_ch_x = None
+    prev_x = 0
     x = 0
     while x < CAPTCHA_WIDTH:
-        if dots_per_col[x] > THRESHOLD:
+        if dots_per_col[x] >= DOTS_THRESHOLD:
+            if first_ch_x is None:
+                first_ch_x = x
             if was_blank:
-                if prev:
-                    blanks.append((prev, x - prev))
-                x += DELTA
+                # Skip first blank.
+                if prev_x:
+                    blanks.append((prev_x, x))
+                # Don't allow too tight chars.
+                x += CH_MIN_WIDTH
                 was_blank = False
         elif not was_blank:
             was_blank = True
-            prev = x
+            prev_x = x
         x += 1
-    blanks = sorted(blanks, key=lambda e: e[1])[:5]
-    blanks = sorted(blanks, key=lambda e: e[0])
+    blanks = [b for b in blanks if b[1] - b[0] >= BLANK_THRESHHOLD]
+    blanks = sorted(blanks, key=lambda b: b[1] - b[0], reverse=True)[:5]
+    # No more than one glued pair currently.
+    assert len(blanks) >= 4, 'bad number of blanks'
+    blanks = sorted(blanks, key=lambda b: b[0])
     # Add last (imaginary) blank to simplify following loop.
-    blanks.append((prev if was_blank else CAPTCHA_WIDTH, 0))
+    blanks.append((prev_x if was_blank else CAPTCHA_WIDTH, 0))
 
     # Get chars.
     chars = []
-    prev = 0
+    x1 = first_ch_x
     widest = 0, 0
-    for i, (x, _) in enumerate(blanks):
-        ch = img[:CAPTCHA_HEIGHT, prev:x]
-        prev = x
-        x1 = find_filled_row(ch.T)
-        x2 = len(ch.T) - find_filled_row(ch.T[::-1])
+    for i, (x2, next_x1) in enumerate(blanks):
         width = x2 - x1
         # Don't allow more than CH_WIDTH * 2.
         extra_w = width - CH_WIDTH * 2
@@ -190,14 +195,18 @@ def segment(img):
         extra_w2 = extra_w - extra_w1
         x1 = max(x1, x1 + extra_w1)
         x2 = min(x2, x2 - extra_w2)
+        ch = img[:CAPTCHA_HEIGHT, x1:x2]
+
         y2 = CAPTCHA_HEIGHT - find_filled_row(ch[::-1])
         y1 = max(0, y2 - CH_HEIGHT)
-        ch = ch[y1:y2, x1:x2]
+        ch = ch[y1:y2]
+
         chars.append(ch)
         if width > widest[0]:
             widest = x2 - x1, i
+        x1 = next_x1
 
-    # Fit chars into char box.
+    # Fit chars into boxes.
     chars2 = []
     for i, ch in enumerate(chars):
         widest_w, widest_i = widest
@@ -227,7 +236,11 @@ def vis(fpath):
 
     # Real result used for OCR.
     orig = get_image(fpath)
-    ch_imgs = segment(orig)
+    try:
+        ch_imgs = segment(orig)
+    except Exception:
+        traceback.print_exc()
+        ch_imgs = [np.zeros((CH_HEIGHT, CH_WIDTH), dtype=np.uint8)] * NUM_CHARS
 
     # Visualizations.
     denoised = _denoise(orig)
@@ -236,17 +249,18 @@ def vis(fpath):
         x1, y1, x2, y2 = line
         cv2.line(with_lines, (x1, y1), (x2, y2), HIGH_COLOR, LINE_THICK)
     processed = _preprocess(orig)
+    # cv2.imwrite('vis.png', processed)
     with_rects = [np.pad(a, ((PAD_H,), (PAD_W,)), _CONSTANT)
                   for a in ch_imgs]
     with_rects = np.concatenate(with_rects, axis=1)
     with_rects = np.pad(with_rects, ((0,), (EXTRA_PAD_W,)), _CONSTANT)
     with_rects = to_rgb(with_rects)
     for i in range(NUM_CHARS):
-        x1 = i * BOX_W + PAD_W + EXTRA_PAD_W
-        x2 = x1 + CH_WIDTH
-        y1 = PAD_H
-        y2 = y1 + CH_HEIGHT
-        cv2.rectangle(with_rects, (x1, y1), (x2, y2), HIGH_COLOR, 2)
+        x1 = i * BOX_W + PAD_W + EXTRA_PAD_W - 1
+        x2 = x1 + CH_WIDTH + 1
+        y1 = PAD_H - 1
+        y2 = y1 + CH_HEIGHT + 1
+        cv2.rectangle(with_rects, (x1, y1), (x2, y2), HIGH_COLOR, 1)
 
     res = np.concatenate((
         to_rgb(orig),
@@ -261,7 +275,7 @@ def vis(fpath):
 
 def train(captchas_dir):
     NUM_INPUT = CH_WIDTH * CH_HEIGHT
-    NUM_NEURONS_HIDDEN = 400
+    NUM_NEURONS_HIDDEN = NUM_INPUT // 3
     NUM_OUTPUT = 10
     ann = libfann.neural_net()
     ann.create_standard_array((NUM_INPUT, NUM_NEURONS_HIDDEN, NUM_OUTPUT))
@@ -284,7 +298,7 @@ def train(captchas_dir):
             img = get_image(fpath)
             ch_imgs = segment(img)
             for ch_img, digit in zip(ch_imgs, answer):
-                ann.train(get_ch_data(ch_img), get_ann_output(digit))
+                ann.train(get_ch_data(ch_img), make_ann_output(digit))
         except Exception as exc:
             report('Error occured while processing {}: {}'.format(name, exc))
             report()
