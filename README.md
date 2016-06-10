@@ -2,6 +2,8 @@
 
 Break CAPTCHA at 2ch.hk using OpenCV and FANN. Just for fun (UWBFTP).
 
+**CAPTCHA WAS CHANGED, THIS CODE IS LEFT JUST FOR HISTORIC PURPOSES.** Maybe I'll update it for the new one some day.
+
 ## Demo
 
 Demo backend is available at `ch.genshiken.org`, [install userscript](https://raw.githubusercontent.com/Kagami/chaptcha/master/chaptcha.user.js) to try it out (not tested for compatibility with Dollchan Extension Tools).
